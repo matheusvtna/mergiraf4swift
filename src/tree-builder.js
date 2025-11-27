@@ -33,79 +33,23 @@ try {
 
 // Select parser language based on file extension
 const extname = path.extname(arg).toLowerCase();
-let LangModule;
-try {
-    // if (extname === '.swift') {
-    //     // LangModule = require('tree-sitter-swift');
-    // } else 
-        
-        if (extname === '.js' || extname === '.cjs' || extname === '.mjs') {
-        LangModule = require('tree-sitter-javascript');
-    } else {
-        // default to JavaScript parser
-        LangModule = require('tree-sitter-javascript');
-    }
-} catch (err) {
-    console.error(`Failed to load Tree-sitter language for extension '${extname}': ${err.message}`);
-    process.exit(5);
-}
-
+const language = extname.split('.').pop();
+const LangModule = require(`tree-sitter-${language}`);
 const parser = new Parser();
 
-function trySetLanguage(parser, mod) {
-    const tried = [];
-    const candidates = [mod, mod && mod.default, mod && mod.Language, mod && mod.javascript, mod && mod.Javascript];
-    for (const cand of candidates) {
-        if (!cand) continue;
-        tried.push(Object.keys(cand));
-        try {
-            parser.setLanguage(cand);
-            return;
-        } catch (e) {
-            // try next
-        }
-    }
-
-    // Fallback: if `mod` looks like a raw grammar descriptor (has name/nodeTypeInfo),
-    // try to require the package main or compiled binding inside the package directory.
+function trySetLanguage(parser, mod) {   
     try {
-        if (mod && typeof mod === 'object' && mod.name && mod.nodeTypeInfo) {
-            const pkgJsonPath = require.resolve('tree-sitter-javascript/package.json');
-            const pkgDir = path.dirname(pkgJsonPath);
-            const tryPaths = [
-                path.join(pkgDir, 'index.js'),
-                path.join(pkgDir, 'binding.js'),
-                path.join(pkgDir, 'lib', 'index.js'),
-                path.join(pkgDir, 'build', 'Release', 'tree_sitter_javascript_binding.node'),
-                path.join(pkgDir, 'build', 'Release', 'tree_sitter_javascript.node')
-            ];
-            for (const p of tryPaths) {
-                try {
-                    const candidate = require(p);
-                    const keys = candidate && typeof candidate === 'object' ? Object.keys(candidate) : [typeof candidate];
-                    tried.push(keys);
-                    try {
-                        parser.setLanguage(candidate);
-                        return;
-                    } catch (e) {
-                        // continue
-                    }
-                } catch (e) {
-                    // ignore
-                }
-            }
-        }
+        parser.setLanguage(mod);
+        return;    
     } catch (e) {
-        // ignore
+        console.error('Failed to set parser language. Error:', e.message);
+        console.error('Module export keys:', Object.keys(mod || {}));
+        process.exit(6);
     }
-
-    console.error('Failed to set parser language. Module did not export a valid language object.');
-    console.error('Module export keys:', Object.keys(mod || {}));
-    console.error('Tried candidate export keys:', tried);
-    process.exit(6);
 }
-
 trySetLanguage(parser, LangModule);
+
+// Parse the source code
 const tree = parser.parse(sourceCode);
 
 function renderTree() {
