@@ -1,0 +1,3 @@
+[submodule "mergiraf-semi"]
+	path = mergiraf-semi
+	url = git@github.com:MatheusPaixaoG/mergiraf-semi.git
