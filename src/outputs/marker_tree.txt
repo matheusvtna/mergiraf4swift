@@ -1,0 +1,7 @@
+source_file [0, 0] - [2, 10]
+  comment [0, 0] - [0, 17]
+  property_declaration [2, 0] - [2, 10]
+    value_binding_pattern [2, 0] - [2, 3]
+    name: pattern [2, 4] - [2, 5]
+      bound_identifier: simple_identifier [2, 4] - [2, 5]
+    value: integer_literal [2, 8] - [2, 10]

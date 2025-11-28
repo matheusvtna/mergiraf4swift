@@ -1,0 +1,76 @@
+I'll open the parse tree output file to inspect node names, then map candidate commutative parents.
+
+Searched for files matching `**/*complex*tree*.txt`, 1 match
+
+Read [](file:///home/matheus/Documents/UFPE/merge-and-code-review/project/src/outputs/complex_types_tree.txt#1-1), lines 1 to 400
+
+I'll review the AST node names in complex_types_tree.txt and recommend which node kinds are good candidates for being listed as CommutativeParents in mergiraf (safe, conditional, and not recommended). Below I give a short rationale for each candidate and a ready-to-copy JSON snippet you can drop into your mergiraf language config.
+
+Quick note on intent
+- CommutativeParent should be a node that acts as an unordered container of independent items (e.g., declarations, conformance lists, import entries) — i.e., the semantic program behavior is not changed by reordering children.  
+- Avoid marking nodes where child order carries semantics (e.g., statement order, parameter positions, tuple positions, enum raw-value auto-assignment).
+
+Summary of candidates (from complex_types_tree.txt)
+
+- Recommended (Safe)
+  - `source_file`: top-level declarations are typically independent; merging them commutatively is usually safe.
+  - `import_declaration`: multiple imports are independent; ordering is insignificant.
+  - `class_body` / `struct_body` (the tree uses `class_body`, `enum_class_body` and `class_body` variants): member declarations inside a class or struct are often reorderable; marking class/struct bodies as commutative lets mergiraf match/merge members by identity rather than by positional order.
+  - `protocol_body`: protocol member declarations are typically independent and reorderable.
+  - `inheritance_specifier`: the list of inherited types / conformances (e.g., `: A, B`) — order of inherited/conformed types is not semantically relevant; treat as an unordered set.
+  - `protocol_composition_type`: `A & B` composition is logically commutative (A & B == B & A).
+
+- Conditional / Use with caution
+  - `enum_class_body` / `enum_entry`: enum entries are often reorderable, but in Swift enums with implicit raw values or associated ordering might matter. If all enum cases in your use are explicitly valued (or you can key-match by case name), you can mark them commutative. Otherwise prefer to leave them non-commutative or only enable after adding robust identity rules for enum cases.
+  - `typealias_declaration` inside class/struct bodies: usually fine, but consider whether you have position-dependent declarations (rare).
+  - `modifiers` / `modifiers` lists: modifier order tends not to matter, but modifiers are usually singletons or small lists — not a high-value target.
+  - `enum_type_parameters` / `data_contents` on enum entries: these are specific data lists — only make commutative if elements are independent.
+
+- Not recommended (do NOT mark commutative)
+  - `function_body` / `statements` / `if_statement` / `assignment` / `call_expression` etc.: statement order is semantically important — do not mark them.
+  - `parameter` / `parameter_list` / `type_parameters`: order and positions matter (call signatures depend on order).
+  - `array_literal`, `tuple_type`, `tuple_expression`, `line_string_literal` contents: ordered structures; do not mark them.
+  - `computed_getter` / `computed_setter`: getter/setter order and presence is meaningful; do not mark.
+
+Concrete rationale mapped to nodes found in complex_types_tree.txt
+- `source_file`: The top-level children in the file are import declarations, declarations, comments — they can be treated as an unordered set when matching across branches. Good candidate.
+- `import_declaration`: Each `import` is independent. Good candidate.
+- `class_body` / `enum_class_body` / `protocol_body`: containers of `property_declaration`, `function_declaration`, `typealias_declaration`, `enum_entry`, etc. Members are usually independent and feasible to merge commutatively (matching by identifier). Good candidate for `class_body` and `protocol_body`; for `enum_class_body` choose with caution (see above).
+- `inheritance_specifier`: found in lines like `inheritance_specifier [50, 44] - [50, 56]` — the items here (conformed protocols / inherited classes) can be commutative.
+- `protocol_composition_type`: e.g., `A & B` — commutative.
+
+Suggested JSON snippet to add to mergiraf language config
+(Place this into your language config where mergiraf expects `commutative_parents`. Adjust names as needed to match your grammar config file.)
+
+```json
+{
+  "commutative_parents": [
+    "source_file",
+    "import_declaration",
+    "class_body",
+    "struct_body",
+    "protocol_body",
+    "inheritance_specifier",
+    "protocol_composition_type"
+  ],
+  "commutative_parents_conditional": [
+    "enum_class_body",        // only if enum cases are matched by name (no implicit raw-value reindexing)
+    "enum_entry",             // if you have identity matching for enum cases
+    "typealias_declaration"   // optional: if your tool can match typealiases by name
+  ]
+}
+```
+
+How to proceed safely
+- Start small: add the `commutative_parents` from the "Recommended" list and run test merges on small examples to confirm behavior.
+- For `enum_class_body` / `enum_entry`: only enable them once mergiraf can reliably match enum cases by their names (so merging two branches adding different enum cases doesn’t accidentally reindex raw values).
+- Add identity rules (match keys) for child nodes: mergiraf supports defining how to match items (e.g., use `simple_identifier` value as identity for `function_declaration` or `property_declaration`). If you define identity keys, commutative merging is much safer — mergiraf can pair up same-named members even if re-ordered.
+- If you want, I can prepare:
+  - A concrete language config patch (JSON) with these commutative parents added.
+  - Identity-match rules for typical member declarations (e.g., `function_declaration` keyed by `simple_identifier`, `property_declaration` keyed by bound identifier) so merging matches items by name instead of position.
+
+Would you like me to:
+- (A) Add the above `commutative_parents` snippet to your mergiraf language config (I can commit the change), or
+- (B) Produce a more complete config that also adds identity keys for `function_declaration`, `property_declaration`, `enum_entry`, etc., so commutative merging is safer?
+
+Pick A or B and I’ll implement it.
